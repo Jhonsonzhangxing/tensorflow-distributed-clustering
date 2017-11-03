@@ -73,20 +73,23 @@ def distribuited_fuzzy_C_means(X, K, GPU_names, initial_centers, n_max_iters, M 
     setup_ts = time.time()
     number_of_gpus = len(GPU_names)
     
-    X_list = np.split( X[ (X.shape[0] % number_of_gpus)  :, : ], number_of_gpus )
+    sizes = [len(arg) for arg in np.split( data_X[ (data_X.shape[0] % number_of_gpus) :, :], number_of_gpus)]
     
     partial_Mu_sum_list = []
     partial_Mu_X_sum_list = []
     
     with tf.name_scope('global'):
         with tf.device('/cpu:0'):
+            all_data = tf.placeholder(data_X.dtype, shape=(data_X.shape), name='all_data')
+            parts = tf.split(tf.Variable(all_data), sizes, 0)
+            
             global_centroids = tf.Variable(initial_centers)
             
     for GPU_num in range(number_of_gpus):
         GPU_name = GPU_names[GPU_num]
         
-        (X_mat) = X_list.pop()
-        (N, M) = X_mat.shape
+        (X_mat) = parts[GPU_num]
+        (N, M) = X_mat.get_shape().as_list()
   
         with tf.name_scope('scope_' + str(GPU_num)):
             with tf.device(GPU_name) :
@@ -138,7 +141,7 @@ def distribuited_fuzzy_C_means(X, K, GPU_names, initial_centers, n_max_iters, M 
     setup_time = float( time.time() - setup_ts )
     initialization_ts = time.time()
     
-    config = tf.ConfigProto( log_device_placement = True )
+    config = tf.ConfigProto( log_device_placement = True, allow_soft_placement = True )
     config.gpu_options.allow_growth = True
     config.gpu_options.allocator_type = 'BFC'
     sess = tf.Session( config = config )
@@ -283,30 +286,24 @@ def distribuited_k_means(X, K, GPU_names, initial_centers, n_max_iters):
     setup_ts = time.time()
     number_of_gpus = len(GPU_names)
 
-    X_list = np.split( X[ (X.shape[0] % number_of_gpus)  :, : ], number_of_gpus )
+    sizes = [len(arg) for arg in np.split( data_X[ (data_X.shape[0] % number_of_gpus) :, :], number_of_gpus)]
     
     partial_directions = []
     partial_values = []
     partial_results = []
-
-    config = tf.ConfigProto( log_device_placement = True, allow_soft_placement = True )
-    config.gpu_options.allow_growth = True
-    config.gpu_options.allocator_type = 'BFC'
-    sess = tf.Session( config = config )
     
     with tf.name_scope('global'):
         with tf.device('/cpu:0'):
-            global_centroids = tf.Variable(initial_centers)
+            all_data = tf.placeholder(data_X.dtype, shape=(data_X.shape), name='all_data')
+            parts = tf.split(tf.Variable(all_data), sizes, 0)
 
-    initialization_ts = time.time()
-    sess.run(tf.global_variables_initializer())
-    initialization_time = float( time.time() - initialization_ts ) 
+            global_centroids = tf.Variable(initial_centers)
             
     for GPU_num in range(len(GPU_names)):
         GPU_name = GPU_names[GPU_num]
             
-        (X_mat) = X_list[GPU_num]
-        (N, M) = X_mat.shape
+        (X_mat) = parts[GPU_num]
+        (N, M) = X_mat.get_shape().as_list()
         
         with tf.name_scope('scope_' + str(GPU_num)):
             with tf.device(GPU_name) :
@@ -363,6 +360,15 @@ def distribuited_k_means(X, K, GPU_names, initial_centers, n_max_iters):
             update_centroid = tf.group( global_centroids.assign(new_centers) )
         
     setup_time = float( time.time() - setup_ts )
+
+    config = tf.ConfigProto( log_device_placement = True, allow_soft_placement = True )
+    config.gpu_options.allow_growth = True
+    config.gpu_options.allocator_type = 'BFC'
+    sess = tf.Session( config = config )
+
+    initialization_ts = time.time()
+    sess.run(tf.global_variables_initializer())
+    initialization_time = float( time.time() - initialization_ts ) 
     
     computation_time = 0.0
     for i in range(n_max_iters):
