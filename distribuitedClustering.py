@@ -100,7 +100,7 @@ def distribuited_fuzzy_C_means(data_X, K, GPU_names, initial_centers, n_max_iter
                 # => K = Number of Centers
                 ####
                 # Data for GPU GPU_num to Clusterize
-                X = tf.constant(X_mat)
+                X = tf.Variable(X_mat)
 
                 # Reshapes rep_centroids and  rep_points to format N x K x M so that 
                 # the 2 matrixes have the same size
@@ -315,7 +315,7 @@ def distribuited_k_means(data_X, K, GPU_names, initial_centers, n_max_iters):
                 ####
 
                 # Data for GPU GPU_num to Clusterize
-                X = tf.constant(X_mat)
+                X = tf.Variable(X_mat)
 
                 # Reshapes rep_centroids and rep_points to format N x K x M so that 
                 # the 2 matrixes have the same size
