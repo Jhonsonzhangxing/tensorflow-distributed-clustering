@@ -30,12 +30,15 @@ if __name__ == "__main__":
     # Varying methods between distribuitedFuzzyCMeans and distribuitedKMeans
     for method in ['distributedKMeans', 'distributedFuzzyCMeans']:
 
-        # Varying the number of observations between 2^5 and 2^26
-        for num_obs in np.flipud(np.arange(5, 27)):
+        # Varying the number of observations between 2^5 and 2^27
+        for num_obs in np.flipud(np.arange(16, 28)):
             error = 0 # flag to check if data is too big
         
             # Varying the number of dimensions between 2 and 20
             for num_dims in np.arange(2, 21):
+
+                if (2**num_obs) * num_dims * 8 > (3200000000):
+                    break
 
                 # Function to generate data and save in disk as numpy file. .npz files
                 # load much faster then generating them everytime.
