@@ -56,7 +56,7 @@ if __name__ == "__main__":
                         log_filename =  method + '-GPUs' + str(num_gpus) + '-n_obs' + str(2**num_obs) + '-n_dims' + str(num_dims) + '-K' + str(K) + '.log'
 
                         # nvprof process comand to run
-                        process_command =   'nvprof --log-file nvprof_logs/' + log_filename + ' python ../distribuitedClustering.py --n_obs=' + str(2**(num_obs)) + ' --n_dim=' + str(num_dims) + ' --K=' + str(K) + ' --n_GPUs=' + str(num_gpus) + ' --n_max_iters=20 --seed=123128 --log_file=executions_log.csv --method_name=' + method + ' --data_file=' + data_path
+                        process_command =   'nvprof --log-file nvprof_logs/' + log_filename + ' python distribuitedClustering.py --n_obs=' + str(2**(num_obs)) + ' --n_dim=' + str(num_dims) + ' --K=' + str(K) + ' --n_GPUs=' + str(num_gpus) + ' --n_max_iters=20 --seed=123128 --log_file=executions_log.csv --method_name=' + method + ' --data_file=' + data_path
 
                         # Print filename in case of errors
                         print(log_filename)
