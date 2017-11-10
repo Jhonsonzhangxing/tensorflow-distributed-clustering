@@ -73,7 +73,7 @@ def distribuited_fuzzy_C_means(data_X, K, GPU_names, initial_centers, n_max_iter
     setup_ts = time.time()
     number_of_gpus = len(GPU_names)
     
-    sizes = [len(arg) for arg in np.split( data_X[ (data_X.shape[0] % number_of_gpus) :, :], number_of_gpus)]
+    sizes = [len(arg) for arg in np.array_split( data_X, len(GPU_names[:6]))]
     
     partial_Mu_sum_list = []
     partial_Mu_X_sum_list = []
@@ -81,7 +81,7 @@ def distribuited_fuzzy_C_means(data_X, K, GPU_names, initial_centers, n_max_iter
     with tf.name_scope('global'):
         with tf.device('/cpu:0'):
             all_data = tf.placeholder(data_X.dtype, shape=(data_X.shape), name='all_data')
-            parts = tf.split(tf.Variable(all_data), sizes, 0)
+            parts = tf.split(all_data, sizes, 0)
 
             global_centroids = tf.Variable(initial_centers)
             
@@ -286,7 +286,7 @@ def distribuited_k_means(data_X, K, GPU_names, initial_centers, n_max_iters):
     setup_ts = time.time()
     number_of_gpus = len(GPU_names)
 
-    sizes = [len(arg) for arg in np.split( data_X[ (data_X.shape[0] % number_of_gpus) :, :], number_of_gpus)]
+    sizes = [len(arg) for arg in np.array_split( data_X, len(GPU_names))]
     
     partial_directions = []
     partial_values = []
@@ -295,7 +295,7 @@ def distribuited_k_means(data_X, K, GPU_names, initial_centers, n_max_iters):
     with tf.name_scope('global'):
         with tf.device('/cpu:0'):
             all_data = tf.placeholder(data_X.dtype, shape=(data_X.shape), name='all_data')
-            parts = tf.split(tf.Variable(all_data), sizes, 0)
+            parts = tf.split(all_data, sizes, 0)
 
             global_centroids = tf.Variable(initial_centers)
             
