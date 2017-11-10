@@ -69,7 +69,7 @@ def parse_valid_gpus_names(parser, arg):
     gpus_to_use = np.random.choice(gpu_names, size = num_GPUs, replace = False)
     return gpus_to_use
 
-def distribuited_fuzzy_C_means(X, K, GPU_names, initial_centers, n_max_iters, M = 2):
+def distribuited_fuzzy_C_means(data_X, K, GPU_names, initial_centers, n_max_iters, M = 2):
     setup_ts = time.time()
     number_of_gpus = len(GPU_names)
     
@@ -82,7 +82,7 @@ def distribuited_fuzzy_C_means(X, K, GPU_names, initial_centers, n_max_iters, M 
         with tf.device('/cpu:0'):
             all_data = tf.placeholder(data_X.dtype, shape=(data_X.shape), name='all_data')
             parts = tf.split(tf.Variable(all_data), sizes, 0)
-            
+
             global_centroids = tf.Variable(initial_centers)
             
     for GPU_num in range(number_of_gpus):
@@ -117,7 +117,8 @@ def distribuited_fuzzy_C_means(X, K, GPU_names, initial_centers, n_max_iters, M 
                 cluster_membership_with_nan = tf.div( tf.transpose(tmp), tf.reduce_sum(tmp, 1))
                 
                 # Error treatment for when there are zeros in count_means_aux
-                cluster_membership = tf.where(tf.is_nan(cluster_membership_with_nan), tf.zeros_like(cluster_membership_with_nan), cluster_membership_with_nan);
+                cluster_membership = tf.where(
+                    tf.is_nan(cluster_membership_with_nan), tf.zeros_like(cluster_membership_with_nan), cluster_membership_with_nan);
                 
                 MU = tf.pow(cluster_membership, M)
                 
@@ -144,18 +145,17 @@ def distribuited_fuzzy_C_means(X, K, GPU_names, initial_centers, n_max_iters, M 
     config = tf.ConfigProto( log_device_placement = True, allow_soft_placement = True )
     config.gpu_options.allow_growth = True
     config.gpu_options.allocator_type = 'BFC'
-    sess = tf.Session( config = config )
+
+    with tf.Session( config = config ) as sess:
+        initialization_ts = time.time()
+        sess.run(tf.global_variables_initializer(), feed_dict={all_data: data_X})
+        initialization_time = float( time.time() - initialization_ts ) 
     
-    init = tf.global_variables_initializer()
-    sess.run(init)
-    
-    initialization_time = float( time.time() - initialization_ts ) 
-    
-    computation_time = 0.0
-    for i in range(n_max_iters):
-        aux_ts = time.time()
-        [result, _] = sess.run([global_centroids, update_centroid])
-        computation_time += float(time.time() - aux_ts)
+        computation_time = 0.0
+        for i in range(n_max_iters):
+            aux_ts = time.time()
+            [result, _] = sess.run([global_centroids, update_centroid])
+            computation_time += float(time.time() - aux_ts)
     
     end_resut = {   'end_center'          : result             ,
                     'init_center'         : initial_centers    ,
@@ -282,7 +282,7 @@ def old_distribuited_k_means(X, K, GPU_names, initial_centers, n_max_iters):
 
     return end_resut
 
-def distribuited_k_means(X, K, GPU_names, initial_centers, n_max_iters):
+def distribuited_k_means(data_X, K, GPU_names, initial_centers, n_max_iters):
     setup_ts = time.time()
     number_of_gpus = len(GPU_names)
 
@@ -364,17 +364,17 @@ def distribuited_k_means(X, K, GPU_names, initial_centers, n_max_iters):
     config = tf.ConfigProto( log_device_placement = True, allow_soft_placement = True )
     config.gpu_options.allow_growth = True
     config.gpu_options.allocator_type = 'BFC'
-    sess = tf.Session( config = config )
 
-    initialization_ts = time.time()
-    sess.run(tf.global_variables_initializer())
-    initialization_time = float( time.time() - initialization_ts ) 
+    with tf.Session( config = config ) as sess:
+        initialization_ts = time.time()
+        sess.run(tf.global_variables_initializer(), feed_dict={all_data: data_X})
+        initialization_time = float( time.time() - initialization_ts ) 
     
-    computation_time = 0.0
-    for i in range(n_max_iters):
-        aux_ts = time.time()
-        [result, _] = sess.run([global_centroids, update_centroid])
-        computation_time += float(time.time() - aux_ts)
+        computation_time = 0.0
+        for i in range(n_max_iters):
+            aux_ts = time.time()
+            [result, _] = sess.run([global_centroids, update_centroid])
+            computation_time += float(time.time() - aux_ts)
     
     end_resut = {   'end_center'          : result             ,
                     'init_center'         : initial_centers    ,
@@ -407,14 +407,14 @@ def main(n_obs, n_dim, K, GPU_names, n_max_iters, seed , log_file, method_name, 
 
     try:
         if method_name == 'distributedKMeans':
-            run_result = distribuited_k_means(X               = X              ,
+            run_result = distribuited_k_means(data_X               = X              ,
                                               K               = K              ,
                                               GPU_names       = GPU_names      ,
                                               n_max_iters     = n_max_iters    ,
                                               initial_centers = initial_centers )
 
         if method_name == 'distributedFuzzyCMeans':
-            run_result = distribuited_fuzzy_C_means(X               = X              ,
+            run_result = distribuited_fuzzy_C_means(data_X               = X              ,
                                                     K               = K              ,
                                                     GPU_names       = GPU_names      ,
                                                     n_max_iters     = n_max_iters    ,
