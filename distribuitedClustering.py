@@ -69,18 +69,19 @@ def parse_valid_gpus_names(parser, arg):
     gpus_to_use = np.random.choice(gpu_names, size = num_GPUs, replace = False)
     return gpus_to_use
 
-def distribuited_fuzzy_C_means(data_X, K, GPU_names, initial_centers, n_max_iters, M = 2):
+def distribuited_fuzzy_C_means(data_batch, K, GPU_names, initial_centers, n_max_iters):
     setup_ts = time.time()
     number_of_gpus = len(GPU_names)
     
-    sizes = [len(arg) for arg in np.array_split( data_X, len(GPU_names[:6]))]
+    sizes = [len(arg) for arg in np.array_split( data_batch, len(GPU_names))]
     
     partial_Mu_sum_list = []
     partial_Mu_X_sum_list = []
     
+    tf.reset_default_graph()
     with tf.name_scope('global'):
         with tf.device('/cpu:0'):
-            all_data = tf.placeholder(data_X.dtype, shape=(data_X.shape), name='all_data')
+            all_data = tf.placeholder(data_batch.dtype, shape=(data_batch.shape), name='all_data')
             parts = tf.split(all_data, sizes, 0)
 
             global_centroids = tf.Variable(initial_centers)
@@ -282,19 +283,20 @@ def old_distribuited_k_means(X, K, GPU_names, initial_centers, n_max_iters):
 
     return end_resut
 
-def distribuited_k_means(data_X, K, GPU_names, initial_centers, n_max_iters):
+def distribuited_k_means(data_batch, K, GPU_names, initial_centers, n_max_iters):
     setup_ts = time.time()
     number_of_gpus = len(GPU_names)
 
-    sizes = [len(arg) for arg in np.array_split( data_X, len(GPU_names))]
+    sizes = [len(arg) for arg in np.array_split( data_batch, len(GPU_names))]
     
     partial_directions = []
     partial_values = []
     partial_results = []
     
+    tf.reset_default_graph()
     with tf.name_scope('global'):
         with tf.device('/cpu:0'):
-            all_data = tf.placeholder(data_X.dtype, shape=(data_X.shape), name='all_data')
+            all_data = tf.placeholder(data_batch.dtype, shape=(data_batch.shape), name='all_data')
             parts = tf.split(all_data, sizes, 0)
 
             global_centroids = tf.Variable(initial_centers)
@@ -397,6 +399,30 @@ def make_data(n_obs, n_dim, seed):
                                  random_state         = seed      )
     return (X, Y)
 
+def run_experiments(batches, GPU_names, K, initial_centers, n_max_iters, func):
+    result = []
+    setup_time = 0.0
+    initialization_time = 0.0
+    computation_time = 0.0
+
+    for batch in batches:
+        batch_run = func(data_batch, K, GPU_names, initial_centers, n_max_iters)
+        result.append(batch_run['end_center'])
+
+        setup_time += batch_run['setup_time']
+        initialization_time += batch_run['initialization_time']
+        computation_time += batch_run['computation_time']
+
+    final_centers = np.mean(result, axis=0)
+
+    return      {   'end_center'          : final_centers      ,
+                    'init_center'         : initial_centers    ,
+                    'setup_time'          : setup_time         ,
+                    'initialization_time' : initialization_time,
+                    'computation_time'    : computation_time   ,
+                    'n_iter'              : n_max_iters
+                }
+
 def main(n_obs, n_dim, K, GPU_names, n_max_iters, seed , log_file, method_name, data_file):
 
     data = np.load(data_file)
@@ -405,20 +431,38 @@ def main(n_obs, n_dim, K, GPU_names, n_max_iters, seed , log_file, method_name, 
     initial_centers = X[0:K, :]
     return_status = 0
 
+    # Defining max batch size based on previous tests
+    data_size = n_dim * n_obs * X.dtype.itemsize
+
+    if (len(GPU_names) == 8):
+        max_size = 134217728 * 2 * X.dtype.itemsize
+    elif (len(GPU_names) == 6):
+        max_size = 16777216 * 16 * X.dtype.itemsize
+    elif (len(GPU_names) == 4):
+        max_size = 16777216 * 11 * X.dtype.itemsize
+    elif (len(GPU_names) == 2):
+        max_size = 8388608 * 11 * X.dtype.itemsize
+
+    num_batches = np.ceil(data_size / max_size)
+
+    batches = np.array_split(X, num_batches)
+
     try:
         if method_name == 'distributedKMeans':
-            run_result = distribuited_k_means(data_X               = X              ,
-                                              K               = K              ,
-                                              GPU_names       = GPU_names      ,
-                                              n_max_iters     = n_max_iters    ,
-                                              initial_centers = initial_centers )
+            run_result = run_experiments(batches            = batches, 
+                                         GPU_names          = GPU_names, 
+                                         K                  = K, 
+                                         initial_centers    = initial_centers, 
+                                         n_max_iters        = n_max_iters, 
+                                         func               = distribuited_k_means)
 
         if method_name == 'distributedFuzzyCMeans':
-            run_result = distribuited_fuzzy_C_means(data_X               = X              ,
-                                                    K               = K              ,
-                                                    GPU_names       = GPU_names      ,
-                                                    n_max_iters     = n_max_iters    ,
-                                                    initial_centers = initial_centers )
+            run_result = run_experiments(batches            = batches, 
+                                         GPU_names          = GPU_names, 
+                                         K                  = K, 
+                                         initial_centers    = initial_centers, 
+                                         n_max_iters        = n_max_iters, 
+                                         func               = distribuited_fuzzy_C_means)
 
     except:
         exc_type, exc_value, exc_tb = sys.exc_info()
@@ -451,15 +495,15 @@ def main(n_obs, n_dim, K, GPU_names, n_max_iters, seed , log_file, method_name, 
                          }
 
         str_to_write = ','.join([ str( data_to_append['method_name'] ),
-                                    str( data_to_append['seed'] ),
-                                    str( data_to_append['num_GPUs'] ),
-                                    str( data_to_append['K'] ),
-                                    str( data_to_append['n_obs'] ),
-                                    str( data_to_append['n_dim'] ),
-                                    str( data_to_append['setup_time'] ),
-                                    str( data_to_append['initialization_time'] ),
-                                    str( data_to_append['computation_time'] ),
-                                    str( data_to_append['n_iter'] ) ])
+                                  str( data_to_append['seed'] ),
+                                  str( data_to_append['num_GPUs'] ),
+                                  str( data_to_append['K'] ),
+                                  str( data_to_append['n_obs'] ),
+                                  str( data_to_append['n_dim'] ),
+                                  str( data_to_append['setup_time'] ),
+                                  str( data_to_append['initialization_time'] ),
+                                  str( data_to_append['computation_time'] ),
+                                  str( data_to_append['n_iter'] ) ])
 
         str_to_write = str(str_to_write) + '\n'
         print('log_file =', log_file)
