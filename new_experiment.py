@@ -37,11 +37,11 @@ if __name__ == "__main__":
         data_path = 'class-data.npz'
         make_data(data_path, num_obs, num_dims, 1826273)
 
-        # Varying the number of K between 2 and 15
-        for K in np.arange(3, 16, 3):
+        # Varying the number of K between 3 and 15
+        for K in [15, 12, 9, 6, 3]:
 
             # Varying number of GPUs between 2 and 8, 2 by 2
-            for num_gpus in [8, 4, 2, 1]:
+            for num_gpus in [8, 4, 6, 2]:
 
                 # Varying methods between distribuitedFuzzyCMeans and distribuitedKMeans
                 for method in ['distributedKMeans', 'distributedFuzzyCMeans']:
