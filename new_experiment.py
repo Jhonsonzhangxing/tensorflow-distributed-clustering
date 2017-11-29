@@ -41,7 +41,7 @@ if __name__ == "__main__":
         for K in np.arange(3, 16, 3):
 
             # Varying number of GPUs between 2 and 8, 2 by 2
-            for num_gpus in [8, 6, 4, 2]:
+            for num_gpus in [4, 2, 1]:
 
                 # Varying methods between distribuitedFuzzyCMeans and distribuitedKMeans
                 for method in ['distributedKMeans', 'distributedFuzzyCMeans']:
