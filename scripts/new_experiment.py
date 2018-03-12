@@ -4,6 +4,8 @@ import os
 
 from subprocess import Popen, PIPE, STDOUT
 
+from datetime import datetime
+
 def make_data(filepath, n_obs, n_dim, seed):
 
     try:
@@ -27,6 +29,7 @@ def make_data(filepath, n_obs, n_dim, seed):
 
 if __name__ == "__main__":
 
+    startTime = datetime.now()
 
     # Varying the number of observations between 25M and 100M
     for num_obs in [100000000, 75000000, 50000000, 25000000]:
@@ -59,4 +62,6 @@ if __name__ == "__main__":
 
                     # Print filename in case of errors
                     print(log_filename + ' - Return code: ' + str(K_error))
+
+    print(datetime.now() - startTime)
 
