@@ -69,19 +69,23 @@ def parse_valid_gpus_names(parser, arg):
     gpus_to_use = np.random.choice(gpu_names, size = num_GPUs, replace = False)
     return gpus_to_use
 
-def distribuited_fuzzy_C_means(data_batch, K, GPU_names, initial_centers, n_max_iters):
+def distribuited_fuzzy_C_means(data_batch, K, GPU_names, n_max_iters):
     setup_ts = time.time()
     number_of_gpus = len(GPU_names)
     
     sizes = [len(arg) for arg in np.array_split( data_batch, len(GPU_names))]
+    result_matrix = [[] for _ in GPU_names]
     
     partial_Mu_sum_list = []
     partial_Mu_X_sum_list = []
+    
+    initial_centers = k_means_._init_centroids(data_batch, K, init='k-means++')
     
     tf.reset_default_graph()
     with tf.name_scope('global'):
         with tf.device('/cpu:0'):
             all_data = tf.placeholder(data_batch.dtype, shape=(data_batch.shape), name='all_data')
+            
             parts = tf.split(all_data, sizes, 0)
 
             global_centroids = tf.Variable(initial_centers)
@@ -120,6 +124,7 @@ def distribuited_fuzzy_C_means(data_batch, K, GPU_names, initial_centers, n_max_
                 # Error treatment for when there are zeros in count_means_aux
                 cluster_membership = tf.where(
                     tf.is_nan(cluster_membership_with_nan), tf.zeros_like(cluster_membership_with_nan), cluster_membership_with_nan);
+                result_matrix[GPU_num] = cluster_membership
                 
                 MU = tf.pow(cluster_membership, M)
                 
@@ -133,6 +138,8 @@ def distribuited_fuzzy_C_means(data_batch, K, GPU_names, initial_centers, n_max_
                 
     with tf.name_scope('global') :
         with tf.device('/cpu:0') :
+            result_matrix = tf.argmax(tf.transpose(tf.concat(result_matrix, 1)), axis = 1)
+            
             global_Mu_sum = tf.add_n( partial_Mu_sum_list )
             global_Mu_X_sum = tf.transpose(  tf.add_n(partial_Mu_X_sum_list) )
             
@@ -157,8 +164,11 @@ def distribuited_fuzzy_C_means(data_batch, K, GPU_names, initial_centers, n_max_
             aux_ts = time.time()
             [result, _] = sess.run([global_centroids, update_centroid])
             computation_time += float(time.time() - aux_ts)
+            
+            cluster_idx = sess.run(result_matrix, feed_dict={all_data: data_batch})
     
     end_resut = {   'end_center'          : result             ,
+                    'cluster_idx'         : cluster_idx        ,
                     'init_center'         : initial_centers    ,
                     'setup_time'          : setup_time         ,
                     'initialization_time' : initialization_time,
@@ -167,15 +177,18 @@ def distribuited_fuzzy_C_means(data_batch, K, GPU_names, initial_centers, n_max_
                 }
     return end_resut
 
-def distribuited_k_means(data_batch, K, GPU_names, initial_centers, n_max_iters):
+def distribuited_k_means(data_batch, K, GPU_names, n_max_iters):
     setup_ts = time.time()
     number_of_gpus = len(GPU_names)
 
     sizes = [len(arg) for arg in np.array_split( data_batch, len(GPU_names))]
+    result_matrix = [[] for _ in GPU_names]
     
     partial_directions = []
     partial_values = []
     partial_results = []
+    
+    initial_centers = k_means_._init_centroids(data_batch, K, init='k-means++')
     
     tf.reset_default_graph()
     with tf.name_scope('global'):
@@ -212,17 +225,19 @@ def distribuited_k_means(data_batch, K, GPU_names, initial_centers, n_max_iters)
                 # This matrix is not sqrt((X-Y)^2), it is just(X-Y)^2
                 # Since we need just the argmin(sqrt((X-Y)^2)) wich is equal to 
                 # argmin((X-Y)^2), it would be a waste of computation
-                sum_squares = tf.reduce_sum(tf.square(tf.subtract( rep_points, rep_centroids) ), axis = 2)
+                subtraction = tf.subtract(rep_points, rep_centroids)
+                square = tf.square(subtraction)
+                sum_squares = tf.reduce_sum(square, axis = 2)
 
                 # Use argmin to select the lowest-distance point
                 # This gets a matrix of size N x 1
                 best_centroids = tf.argmin(sum_squares, axis = 1)
+                result_matrix[GPU_num] = sum_squares
                 
                 means = []
                 for c in range(K):
-                    means.append(
-                        tf.reduce_mean(
-                            tf.gather(X, tf.reshape(tf.where(tf.equal(best_centroids, c)), [1,-1])), axis=[1]))
+                    aux_points = tf.gather(X, tf.reshape(tf.where(tf.equal(best_centroids, c)), [1,-1]))
+                    means.append(tf.reduce_mean(aux_points, axis=[1]))
 
                 new_centroids = tf.concat(means, 0)
                     
@@ -237,6 +252,8 @@ def distribuited_k_means(data_batch, K, GPU_names, initial_centers, n_max_iters)
                 
     with tf.name_scope('global') :
         with tf.device('/cpu:0') :
+            result_matrix = tf.argmin(tf.concat(result_matrix, 0), axis = 1)
+            
             sum_direction = tf.add_n( partial_directions )
             sum_mu = tf.add_n( partial_values )
 
@@ -259,10 +276,14 @@ def distribuited_k_means(data_batch, K, GPU_names, initial_centers, n_max_iters)
         computation_time = 0.0
         for i in range(n_max_iters):
             aux_ts = time.time()
-            [result, _] = sess.run([global_centroids, update_centroid])
+            [result, centroids, _] = sess.run([global_centroids, best_centroids, update_centroid])
             computation_time += float(time.time() - aux_ts)
-    
+            
+            cluster_idx = sess.run(result_matrix, feed_dict={all_data: data_batch})
+
     end_resut = {   'end_center'          : result             ,
+                    'cluster_idx'         : cluster_idx        ,
+                    'centroids'           : centroids          ,
                     'init_center'         : initial_centers    ,
                     'setup_time'          : setup_time         ,
                     'initialization_time' : initialization_time,
